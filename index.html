@@ -1,115 +1,4 @@
-const express = require('express');
-const XLSX = require('xlsx');
-const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
-
-const app = express();
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-
-// Serve static files from 'public' directory
-app.use(express.static(path.join(__dirname, 'public')));
-
-// ============ CONFIGURATION ============
-const DATA_DIR = path.join(__dirname, 'student_data');
-const EXCEL_FILE = path.join(DATA_DIR, 'All_Students_Master.xlsx');
-
-// Create directories if they don't exist
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-// In-memory storage for better performance
-let inMemoryStudents = [];
-
-// Load existing data from file if available
-function loadExistingData() {
-    if (fs.existsSync(EXCEL_FILE)) {
-        try {
-            const workbook = XLSX.readFile(EXCEL_FILE);
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            inMemoryStudents = XLSX.utils.sheet_to_json(worksheet);
-            console.log(`📚 Loaded ${inMemoryStudents.length} existing students`);
-        } catch (err) {
-            console.log('No existing data found, starting fresh');
-        }
-    }
-}
-
-// Save to file
-function saveToFile() {
-    if (inMemoryStudents.length > 0) {
-        try {
-            const worksheet = XLSX.utils.json_to_sheet(inMemoryStudents);
-            autoFitColumns(worksheet);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "All_Students");
-            XLSX.writeFile(workbook, EXCEL_FILE);
-            console.log(`💾 Saved ${inMemoryStudents.length} students to file`);
-        } catch (err) {
-            console.log('Error saving to file:', err.message);
-        }
-    }
-}
-
-// Auto-fit columns function
-function autoFitColumns(worksheet) {
-    if (!worksheet['!ref']) return;
-    
-    const range = XLSX.utils.decode_range(worksheet['!ref']);
-    const colWidths = {};
-    
-    const headers = ["S.No", "Student Name", "Father's Name", "Address", "Pin Code",
-        "Contact No", "Emergency Contact No", "Blood Group",
-        "Photo File", "Signature File", "Student Folder", "Registration Date", "Registration ID"];
-    
-    headers.forEach((header, idx) => {
-        colWidths[idx] = Math.max(header.length + 3, 15);
-    });
-    
-    for (let row = range.s.r; row <= range.e.r; row++) {
-        for (let col = range.s.c; col <= range.e.c; col++) {
-            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-            const cell = worksheet[cellAddress];
-            if (cell && cell.v) {
-                const cellValue = String(cell.v);
-                const maxWidth = (col === 3) ? 50 : 35;
-                const cellLength = Math.min(cellValue.length, maxWidth);
-                colWidths[col] = Math.max(colWidths[col] || 0, cellLength + 2);
-            }
-        }
-    }
-    
-    worksheet['!cols'] = [];
-    for (let col = range.s.c; col <= range.e.c; col++) {
-        let width = colWidths[col] || 15;
-        width = Math.min(45, Math.max(12, width));
-        worksheet['!cols'].push({ wch: width });
-    }
-    
-    // Enable text wrapping
-    for (let row = range.s.r; row <= range.e.r; row++) {
-        for (let col = range.s.c; col <= range.e.c; col++) {
-            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-            const cell = worksheet[cellAddress];
-            if (cell) {
-                if (!cell.s) cell.s = {};
-                cell.s.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
-            }
-        }
-    }
-}
-
-// Load existing data on startup
-loadExistingData();
-
-// Save data every 5 minutes
-setInterval(saveToFile, 5 * 60 * 1000);
-
-// ============ HTML CONTENT (embedded as fallback) ============
-const HTML_CONTENT = `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -146,17 +35,9 @@ const HTML_CONTENT = `<!DOCTYPE html>
             text-align: center;
         }
         
-        .stats {
-            background: #f8f9fa;
-            padding: 15px;
-            text-align: center;
-            border-bottom: 1px solid #dee2e6;
-        }
-        
-        .stats span {
-            font-size: 24px;
-            font-weight: bold;
-            color: #2a5298;
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
         }
         
         .form-container {
@@ -185,6 +66,11 @@ const HTML_CONTENT = `<!DOCTYPE html>
             font-size: 0.9rem;
         }
         
+        .input-group label i {
+            margin-right: 8px;
+            color: #2a5298;
+        }
+        
         .required {
             color: red;
         }
@@ -194,11 +80,25 @@ const HTML_CONTENT = `<!DOCTYPE html>
             border: 2px solid #e0e0e0;
             border-radius: 8px;
             font-size: 14px;
+            transition: all 0.3s;
         }
         
         input:focus, select:focus, textarea:focus {
             outline: none;
             border-color: #2a5298;
+            box-shadow: 0 0 0 3px rgba(42,82,152,0.1);
+        }
+        
+        input[type="file"] {
+            padding: 10px;
+            border: 2px dashed #ccc;
+            background: #fafafa;
+        }
+        
+        .error-message {
+            color: #e74c3c;
+            font-size: 12px;
+            margin-top: 5px;
         }
         
         button {
@@ -211,7 +111,13 @@ const HTML_CONTENT = `<!DOCTYPE html>
             font-weight: 600;
             cursor: pointer;
             width: 100%;
-            margin-top: 20px;
+            margin-top: 30px;
+            transition: transform 0.2s;
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
         
         button:disabled {
@@ -219,16 +125,12 @@ const HTML_CONTENT = `<!DOCTYPE html>
             cursor: not-allowed;
         }
         
-        .btn-download {
-            background: linear-gradient(135deg, #28a745, #20c997);
-            margin-top: 10px;
-        }
-        
         .status {
             margin-top: 20px;
             padding: 15px;
             border-radius: 8px;
             display: none;
+            white-space: pre-line;
         }
         
         .status.success {
@@ -250,12 +152,6 @@ const HTML_CONTENT = `<!DOCTYPE html>
             color: #0c5460;
             border: 1px solid #bee5eb;
             display: block;
-        }
-        
-        .error-message {
-            color: #e74c3c;
-            font-size: 12px;
-            margin-top: 5px;
         }
         
         .file-hint {
@@ -281,11 +177,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
     <div class="container">
         <div class="header">
             <h1><i class="fas fa-id-card"></i> Student Registration System</h1>
-            <p>Complete all fields to register</p>
-        </div>
-        
-        <div class="stats">
-            <i class="fas fa-users"></i> Total Registered Students: <span id="totalStudents">0</span>
+            <p>Complete all fields to register (All fields mandatory)</p>
         </div>
         
         <div class="form-container">
@@ -355,10 +247,6 @@ const HTML_CONTENT = `<!DOCTYPE html>
                 <button type="submit" id="submitBtn">
                     <i class="fas fa-paper-plane"></i> Register Student
                 </button>
-                
-                <button type="button" class="btn-download" onclick="downloadExcel()">
-                    <i class="fas fa-download"></i> Download All Data (Excel)
-                </button>
             </form>
             
             <div id="status" class="status"></div>
@@ -366,18 +254,6 @@ const HTML_CONTENT = `<!DOCTYPE html>
     </div>
     
     <script>
-        async function loadTotalStudents() {
-            try {
-                const response = await fetch('/api/students');
-                const data = await response.json();
-                document.getElementById('totalStudents').textContent = data.total || 0;
-            } catch (error) {
-                console.error('Error loading stats:', error);
-            }
-        }
-        
-        loadTotalStudents();
-        
         const form = document.getElementById('registrationForm');
         const statusDiv = document.getElementById('status');
         const submitBtn = document.getElementById('submitBtn');
@@ -387,9 +263,9 @@ const HTML_CONTENT = `<!DOCTYPE html>
         }
         
         function validateFile(file, fieldName) {
-            if (!file) return \`\${fieldName} is required\`;
-            if (!file.name.match(/\\.(jpg|jpeg)$/i)) return \`\${fieldName} must be a .jpg file\`;
-            if (file.size > 2 * 1024 * 1024) return \`\${fieldName} must be less than 2MB\`;
+            if (!file) return `${fieldName} is required`;
+            if (!file.name.match(/\.(jpg|jpeg)$/i)) return `${fieldName} must be a .jpg file`;
+            if (file.size > 2 * 1024 * 1024) return `${fieldName} must be less than 2MB`;
             return null;
         }
         
@@ -419,7 +295,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
             if (!pincode) {
                 document.getElementById('pincodeError').textContent = 'Pin code is required';
                 isValid = false;
-            } else if (!/^\\d{6}$/.test(pincode)) {
+            } else if (!/^\d{6}$/.test(pincode)) {
                 document.getElementById('pincodeError').textContent = 'Pin code must be 6 digits';
                 isValid = false;
             }
@@ -428,7 +304,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
             if (!contactNo) {
                 document.getElementById('contactError').textContent = 'Contact number is required';
                 isValid = false;
-            } else if (!/^\\d{10}$/.test(contactNo)) {
+            } else if (!/^\d{10}$/.test(contactNo)) {
                 document.getElementById('contactError').textContent = 'Contact number must be 10 digits';
                 isValid = false;
             }
@@ -437,7 +313,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
             if (!emergencyContact) {
                 document.getElementById('emergencyError').textContent = 'Emergency contact is required';
                 isValid = false;
-            } else if (!/^\\d{10}$/.test(emergencyContact)) {
+            } else if (!/^\d{10}$/.test(emergencyContact)) {
                 document.getElementById('emergencyError').textContent = 'Emergency contact must be 10 digits';
                 isValid = false;
             }
@@ -474,10 +350,6 @@ const HTML_CONTENT = `<!DOCTYPE html>
             });
         }
         
-        async function downloadExcel() {
-            window.open('/api/download-excel', '_blank');
-        }
-        
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -506,7 +378,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
                     signatureBase64: signatureBase64
                 };
                 
-                const response = await fetch('/api/submit', {
+                const response = await fetch('http://localhost:3000/submit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
@@ -516,194 +388,22 @@ const HTML_CONTENT = `<!DOCTYPE html>
                 
                 if (result.success) {
                     statusDiv.className = 'status success';
-                    statusDiv.innerHTML = \`✅ \${result.message}\`;
+                    statusDiv.innerHTML = result.message.replace(/\n/g, '<br>');
                     form.reset();
-                    loadTotalStudents();
                 } else {
                     throw new Error(result.message);
                 }
             } catch (error) {
                 statusDiv.className = 'status error';
-                statusDiv.innerHTML = \`❌ Error: \${error.message}\`;
+                statusDiv.innerHTML = `❌ Error: ${error.message}<br><br>
+                <strong>Troubleshooting:</strong><br>
+                1. Make sure server is running: <code>node server.js</code><br>
+                2. Check that port 3000 is not in use<br>
+                3. Verify the server is running in the terminal`;
             } finally {
                 submitBtn.disabled = false;
             }
         });
     </script>
 </body>
-</html>`;
-
-// ============ API ENDPOINTS ============
-
-// Serve the main HTML page
-app.get('/', (req, res) => {
-    // Try to serve from public folder first
-    const publicPath = path.join(__dirname, 'public', 'index.html');
-    if (fs.existsSync(publicPath)) {
-        res.sendFile(publicPath);
-    } else {
-        // Fallback to embedded HTML
-        res.send(HTML_CONTENT);
-    }
-});
-
-// Submit registration
-app.post('/api/submit', async (req, res) => {
-    console.log('\n📥 New registration received');
-    
-    try {
-        const { studentName, fatherName, address, pincode, contactNo,
-                emergencyContact, bloodGroup, photoBase64, signatureBase64 } = req.body;
-        
-        // Validation
-        if (!studentName || !fatherName || !address || !pincode || 
-            !contactNo || !emergencyContact || !bloodGroup) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Missing required fields' 
-            });
-        }
-        
-        console.log(`👤 Student: ${studentName}`);
-        
-        // Save photos to disk (optional)
-        let savedFiles = { folderName: 'N/A', photoFileName: 'N/A', signatureFileName: 'N/A' };
-        try {
-            const safeName = studentName.replace(/[^a-zA-Z0-9]/g, '_');
-            const timestamp = Date.now();
-            const folderName = `${safeName}_${timestamp}`;
-            const studentFolder = path.join(DATA_DIR, folderName);
-            
-            if (!fs.existsSync(studentFolder)) {
-                fs.mkdirSync(studentFolder, { recursive: true });
-            }
-            
-            const photoFileName = `${safeName}_photo.jpg`;
-            const signatureFileName = `${safeName}_sign.jpg`;
-            
-            if (photoBase64) {
-                const photoBuffer = Buffer.from(photoBase64, 'base64');
-                fs.writeFileSync(path.join(studentFolder, photoFileName), photoBuffer);
-            }
-            
-            if (signatureBase64) {
-                const signatureBuffer = Buffer.from(signatureBase64, 'base64');
-                fs.writeFileSync(path.join(studentFolder, signatureFileName), signatureBuffer);
-            }
-            
-            savedFiles = { folderName, photoFileName, signatureFileName };
-            console.log(`📁 Created folder: ${folderName}`);
-        } catch (fileError) {
-            console.log('File save note:', fileError.message);
-        }
-        
-        // Create new student entry
-        const newEntry = {
-            "S.No": inMemoryStudents.length + 1,
-            "Student Name": studentName,
-            "Father's Name": fatherName,
-            "Address": address,
-            "Pin Code": pincode,
-            "Contact No": contactNo,
-            "Emergency Contact No": emergencyContact,
-            "Blood Group": bloodGroup,
-            "Photo File": savedFiles.photoFileName,
-            "Signature File": savedFiles.signatureFileName,
-            "Student Folder": savedFiles.folderName,
-            "Registration Date": new Date().toLocaleString(),
-            "Registration ID": `REG${Date.now()}${Math.floor(Math.random() * 1000)}`
-        };
-        
-        // Add to storage
-        inMemoryStudents.push(newEntry);
-        
-        // Save to file immediately
-        saveToFile();
-        
-        console.log(`✅ Registered! Total students: ${inMemoryStudents.length}`);
-        
-        res.json({ 
-            success: true, 
-            message: `✅ Registration successful! Total students: ${inMemoryStudents.length}`,
-            totalStudents: inMemoryStudents.length
-        });
-        
-    } catch (error) {
-        console.error('Error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: error.message 
-        });
-    }
-});
-
-// Get all students
-app.get('/api/students', (req, res) => {
-    res.json({ 
-        success: true, 
-        students: inMemoryStudents, 
-        total: inMemoryStudents.length 
-    });
-});
-
-// Download Excel file
-app.get('/api/download-excel', (req, res) => {
-    try {
-        if (inMemoryStudents.length === 0) {
-            return res.status(404).json({ error: 'No data available' });
-        }
-        
-        const worksheet = XLSX.utils.json_to_sheet(inMemoryStudents);
-        autoFitColumns(worksheet);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "All_Students");
-        
-        const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-        
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', 'attachment; filename=All_Students_Master.xlsx');
-        res.send(excelBuffer);
-        
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Health check
-app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'OK', 
-        timestamp: new Date().toISOString(),
-        totalStudents: inMemoryStudents.length,
-        server: 'Render.com Ready',
-        publicFolderExists: fs.existsSync(path.join(__dirname, 'public')),
-        indexHtmlExists: fs.existsSync(path.join(__dirname, 'public', 'index.html'))
-    });
-});
-
-// Catch-all route to handle client-side routing
-app.get('*', (req, res) => {
-    const publicPath = path.join(__dirname, 'public', 'index.html');
-    if (fs.existsSync(publicPath)) {
-        res.sendFile(publicPath);
-    } else {
-        res.send(HTML_CONTENT);
-    }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`
-    ╔════════════════════════════════════════════════════════════╗
-    ║     🚀 STUDENT REGISTRATION SYSTEM - RENDER READY          ║
-    ║                                                            ║
-    ║   📡 Server: http://localhost:${PORT}                       ║
-    ║   👥 Students Registered: ${inMemoryStudents.length}         ║
-    ║   📁 Public folder exists: ${fs.existsSync(path.join(__dirname, 'public'))}
-    ║   📄 Index.html exists: ${fs.existsSync(path.join(__dirname, 'public', 'index.html'))}
-    ║                                                            ║
-    ║   ✅ Ready for deployment on Render.com                    ║
-    ║   📋 Visit: https://your-app.onrender.com                  ║
-    ╚════════════════════════════════════════════════════════════╝
-    `);
-});
+</html>
