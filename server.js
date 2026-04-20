@@ -8,22 +8,18 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// Serve static files from 'public' directory
-app.use(express.static(path.join(__dirname, 'public')));
-
 // ============ CONFIGURATION ============
 const DATA_DIR = path.join(__dirname, 'student_data');
 const EXCEL_FILE = path.join(DATA_DIR, 'All_Students_Master.xlsx');
 
-// Create directories if they don't exist
 if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// In-memory storage for better performance
+// In-memory storage
 let inMemoryStudents = [];
 
-// Load existing data from file if available
+// Load existing data
 function loadExistingData() {
     if (fs.existsSync(EXCEL_FILE)) {
         try {
@@ -33,7 +29,7 @@ function loadExistingData() {
             inMemoryStudents = XLSX.utils.sheet_to_json(worksheet);
             console.log(`📚 Loaded ${inMemoryStudents.length} existing students`);
         } catch (err) {
-            console.log('No existing data found, starting fresh');
+            console.log('No existing data found');
         }
     }
 }
@@ -54,7 +50,6 @@ function saveToFile() {
     }
 }
 
-// Auto-fit columns function
 function autoFitColumns(worksheet) {
     if (!worksheet['!ref']) return;
     
@@ -63,10 +58,10 @@ function autoFitColumns(worksheet) {
     
     const headers = ["S.No", "Student Name", "Father's Name", "Address", "Pin Code",
         "Contact No", "Emergency Contact No", "Blood Group",
-        "Photo File", "Signature File", "Student Folder", "Registration Date", "Registration ID"];
+        "Photo (Base64)", "Signature (Base64)", "Registration Date", "Registration ID"];
     
     headers.forEach((header, idx) => {
-        colWidths[idx] = Math.max(header.length + 3, 15);
+        colWidths[idx] = Math.max(header.length + 3, 20);
     });
     
     for (let row = range.s.r; row <= range.e.r; row++) {
@@ -75,7 +70,7 @@ function autoFitColumns(worksheet) {
             const cell = worksheet[cellAddress];
             if (cell && cell.v) {
                 const cellValue = String(cell.v);
-                const maxWidth = (col === 3) ? 50 : 35;
+                const maxWidth = 50;
                 const cellLength = Math.min(cellValue.length, maxWidth);
                 colWidths[col] = Math.max(colWidths[col] || 0, cellLength + 2);
             }
@@ -84,31 +79,16 @@ function autoFitColumns(worksheet) {
     
     worksheet['!cols'] = [];
     for (let col = range.s.c; col <= range.e.c; col++) {
-        let width = colWidths[col] || 15;
-        width = Math.min(45, Math.max(12, width));
+        let width = colWidths[col] || 20;
+        width = Math.min(60, Math.max(15, width));
         worksheet['!cols'].push({ wch: width });
-    }
-    
-    // Enable text wrapping
-    for (let row = range.s.r; row <= range.e.r; row++) {
-        for (let col = range.s.c; col <= range.e.c; col++) {
-            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-            const cell = worksheet[cellAddress];
-            if (cell) {
-                if (!cell.s) cell.s = {};
-                cell.s.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
-            }
-        }
     }
 }
 
-// Load existing data on startup
 loadExistingData();
-
-// Save data every 5 minutes
 setInterval(saveToFile, 5 * 60 * 1000);
 
-// ============ HTML CONTENT (embedded as fallback) ============
+// HTML Content (embedded)
 const HTML_CONTENT = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -117,164 +97,31 @@ const HTML_CONTENT = `<!DOCTYPE html>
     <title>Student Registration System</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            overflow: hidden;
-        }
-        
-        .header {
-            background: linear-gradient(135deg, #1e3c72, #2a5298);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-        
-        .stats {
-            background: #f8f9fa;
-            padding: 15px;
-            text-align: center;
-            border-bottom: 1px solid #dee2e6;
-        }
-        
-        .stats span {
-            font-size: 24px;
-            font-weight: bold;
-            color: #2a5298;
-        }
-        
-        .form-container {
-            padding: 40px;
-        }
-        
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 25px;
-        }
-        
-        .full-width {
-            grid-column: span 2;
-        }
-        
-        .input-group {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        
-        .input-group label {
-            font-weight: 600;
-            color: #333;
-            font-size: 0.9rem;
-        }
-        
-        .required {
-            color: red;
-        }
-        
-        input, select, textarea {
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-        
-        input:focus, select:focus, textarea:focus {
-            outline: none;
-            border-color: #2a5298;
-        }
-        
-        button {
-            background: linear-gradient(135deg, #1e3c72, #2a5298);
-            color: white;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 20px;
-        }
-        
-        button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
-        .btn-download {
-            background: linear-gradient(135deg, #28a745, #20c997);
-            margin-top: 10px;
-        }
-        
-        .status {
-            margin-top: 20px;
-            padding: 15px;
-            border-radius: 8px;
-            display: none;
-        }
-        
-        .status.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-            display: block;
-        }
-        
-        .status.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-            display: block;
-        }
-        
-        .status.loading {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-            display: block;
-        }
-        
-        .error-message {
-            color: #e74c3c;
-            font-size: 12px;
-            margin-top: 5px;
-        }
-        
-        .file-hint {
-            font-size: 11px;
-            color: #666;
-            margin-top: 5px;
-        }
-        
-        @media (max-width: 768px) {
-            .form-grid {
-                grid-template-columns: 1fr;
-            }
-            .full-width {
-                grid-column: span 1;
-            }
-            .form-container {
-                padding: 20px;
-            }
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #1e3c72, #2a5298); color: white; padding: 30px; text-align: center; }
+        .stats { background: #f8f9fa; padding: 15px; text-align: center; border-bottom: 1px solid #dee2e6; }
+        .stats span { font-size: 24px; font-weight: bold; color: #2a5298; }
+        .form-container { padding: 40px; }
+        .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 25px; }
+        .full-width { grid-column: span 2; }
+        .input-group { display: flex; flex-direction: column; gap: 8px; }
+        .input-group label { font-weight: 600; color: #333; font-size: 0.9rem; }
+        .required { color: red; }
+        input, select, textarea { padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #2a5298; }
+        button { background: linear-gradient(135deg, #1e3c72, #2a5298); color: white; padding: 15px 30px; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 20px; }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-download { background: linear-gradient(135deg, #28a745, #20c997); margin-top: 10px; }
+        .status { margin-top: 20px; padding: 15px; border-radius: 8px; display: none; }
+        .status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; display: block; }
+        .status.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; display: block; }
+        .status.loading { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; display: block; }
+        .error-message { color: #e74c3c; font-size: 12px; margin-top: 5px; }
+        .file-hint { font-size: 11px; color: #666; margin-top: 5px; }
+        .preview-img { max-width: 100px; margin-top: 10px; border-radius: 8px; }
+        @media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } .full-width { grid-column: span 1; } .form-container { padding: 20px; } }
     </style>
 </head>
 <body>
@@ -283,11 +130,9 @@ const HTML_CONTENT = `<!DOCTYPE html>
             <h1><i class="fas fa-id-card"></i> Student Registration System</h1>
             <p>Complete all fields to register</p>
         </div>
-        
         <div class="stats">
             <i class="fas fa-users"></i> Total Registered Students: <span id="totalStudents">0</span>
         </div>
-        
         <div class="form-container">
             <form id="registrationForm">
                 <div class="form-grid">
@@ -297,43 +142,36 @@ const HTML_CONTENT = `<!DOCTYPE html>
                         <div class="file-hint">Only .jpg files, max 2MB</div>
                         <div class="error-message" id="photoError"></div>
                     </div>
-                    
                     <div class="input-group">
                         <label><i class="fas fa-user-graduate"></i> Student Name <span class="required">*</span></label>
                         <input type="text" id="studentName" placeholder="Enter full name" required>
                         <div class="error-message" id="nameError"></div>
                     </div>
-                    
                     <div class="input-group">
                         <label><i class="fas fa-user-friends"></i> Father's Name <span class="required">*</span></label>
                         <input type="text" id="fatherName" placeholder="Enter father's name" required>
                         <div class="error-message" id="fatherError"></div>
                     </div>
-                    
                     <div class="input-group full-width">
                         <label><i class="fas fa-map-marker-alt"></i> Address <span class="required">*</span></label>
                         <textarea id="address" rows="3" placeholder="Enter complete address" required></textarea>
                         <div class="error-message" id="addressError"></div>
                     </div>
-                    
                     <div class="input-group">
                         <label><i class="fas fa-map-pin"></i> Pin Code <span class="required">*</span></label>
                         <input type="text" id="pincode" maxlength="6" placeholder="6 digits" required>
                         <div class="error-message" id="pincodeError"></div>
                     </div>
-                    
                     <div class="input-group">
                         <label><i class="fas fa-phone-alt"></i> Contact Number <span class="required">*</span></label>
                         <input type="tel" id="contactNo" maxlength="10" placeholder="10 digits" required>
                         <div class="error-message" id="contactError"></div>
                     </div>
-                    
                     <div class="input-group">
                         <label><i class="fas fa-phone-volume"></i> Emergency Contact <span class="required">*</span></label>
                         <input type="tel" id="emergencyContact" maxlength="10" placeholder="10 digits" required>
                         <div class="error-message" id="emergencyError"></div>
                     </div>
-                    
                     <div class="input-group">
                         <label><i class="fas fa-tint"></i> Blood Group <span class="required">*</span></label>
                         <select id="bloodGroup" required>
@@ -343,7 +181,6 @@ const HTML_CONTENT = `<!DOCTYPE html>
                         </select>
                         <div class="error-message" id="bloodError"></div>
                     </div>
-                    
                     <div class="input-group">
                         <label><i class="fas fa-signature"></i> Signature <span class="required">*</span></label>
                         <input type="file" id="signature" accept=".jpg,.jpeg" required>
@@ -351,117 +188,61 @@ const HTML_CONTENT = `<!DOCTYPE html>
                         <div class="error-message" id="signError"></div>
                     </div>
                 </div>
-                
-                <button type="submit" id="submitBtn">
-                    <i class="fas fa-paper-plane"></i> Register Student
-                </button>
-                
-                <button type="button" class="btn-download" onclick="downloadExcel()">
-                    <i class="fas fa-download"></i> Download All Data (Excel)
-                </button>
+                <button type="submit" id="submitBtn"><i class="fas fa-paper-plane"></i> Register Student</button>
+                <button type="button" class="btn-download" onclick="downloadExcel()"><i class="fas fa-download"></i> Download All Data (Excel with Images)</button>
             </form>
-            
             <div id="status" class="status"></div>
         </div>
     </div>
-    
     <script>
         async function loadTotalStudents() {
             try {
                 const response = await fetch('/api/students');
                 const data = await response.json();
                 document.getElementById('totalStudents').textContent = data.total || 0;
-            } catch (error) {
-                console.error('Error loading stats:', error);
-            }
+            } catch (error) { console.error(error); }
         }
-        
         loadTotalStudents();
         
         const form = document.getElementById('registrationForm');
         const statusDiv = document.getElementById('status');
         const submitBtn = document.getElementById('submitBtn');
         
-        function clearErrors() {
-            document.querySelectorAll('.error-message').forEach(el => el.textContent = '');
-        }
+        function clearErrors() { document.querySelectorAll('.error-message').forEach(el => el.textContent = ''); }
         
         function validateFile(file, fieldName) {
-            if (!file) return \`\${fieldName} is required\`;
-            if (!file.name.match(/\\.(jpg|jpeg)$/i)) return \`\${fieldName} must be a .jpg file\`;
-            if (file.size > 2 * 1024 * 1024) return \`\${fieldName} must be less than 2MB\`;
+            if (!file) return fieldName + ' is required';
+            if (!file.name.match(/\\.(jpg|jpeg)$/i)) return fieldName + ' must be a .jpg file';
+            if (file.size > 2 * 1024 * 1024) return fieldName + ' must be less than 2MB';
             return null;
         }
         
         function validateForm() {
             let isValid = true;
             clearErrors();
-            
             const studentName = document.getElementById('studentName').value.trim();
-            if (!studentName) {
-                document.getElementById('nameError').textContent = 'Student name is required';
-                isValid = false;
-            }
-            
+            if (!studentName) { document.getElementById('nameError').textContent = 'Student name is required'; isValid = false; }
             const fatherName = document.getElementById('fatherName').value.trim();
-            if (!fatherName) {
-                document.getElementById('fatherError').textContent = "Father's name is required";
-                isValid = false;
-            }
-            
+            if (!fatherName) { document.getElementById('fatherError').textContent = "Father's name is required"; isValid = false; }
             const address = document.getElementById('address').value.trim();
-            if (!address) {
-                document.getElementById('addressError').textContent = 'Address is required';
-                isValid = false;
-            }
-            
+            if (!address) { document.getElementById('addressError').textContent = 'Address is required'; isValid = false; }
             const pincode = document.getElementById('pincode').value.trim();
-            if (!pincode) {
-                document.getElementById('pincodeError').textContent = 'Pin code is required';
-                isValid = false;
-            } else if (!/^\\d{6}$/.test(pincode)) {
-                document.getElementById('pincodeError').textContent = 'Pin code must be 6 digits';
-                isValid = false;
-            }
-            
+            if (!pincode) { document.getElementById('pincodeError').textContent = 'Pin code is required'; isValid = false; }
+            else if (!/^\\d{6}$/.test(pincode)) { document.getElementById('pincodeError').textContent = 'Pin code must be 6 digits'; isValid = false; }
             const contactNo = document.getElementById('contactNo').value.trim();
-            if (!contactNo) {
-                document.getElementById('contactError').textContent = 'Contact number is required';
-                isValid = false;
-            } else if (!/^\\d{10}$/.test(contactNo)) {
-                document.getElementById('contactError').textContent = 'Contact number must be 10 digits';
-                isValid = false;
-            }
-            
+            if (!contactNo) { document.getElementById('contactError').textContent = 'Contact number is required'; isValid = false; }
+            else if (!/^\\d{10}$/.test(contactNo)) { document.getElementById('contactError').textContent = 'Contact number must be 10 digits'; isValid = false; }
             const emergencyContact = document.getElementById('emergencyContact').value.trim();
-            if (!emergencyContact) {
-                document.getElementById('emergencyError').textContent = 'Emergency contact is required';
-                isValid = false;
-            } else if (!/^\\d{10}$/.test(emergencyContact)) {
-                document.getElementById('emergencyError').textContent = 'Emergency contact must be 10 digits';
-                isValid = false;
-            }
-            
+            if (!emergencyContact) { document.getElementById('emergencyError').textContent = 'Emergency contact is required'; isValid = false; }
+            else if (!/^\\d{10}$/.test(emergencyContact)) { document.getElementById('emergencyError').textContent = 'Emergency contact must be 10 digits'; isValid = false; }
             const bloodGroup = document.getElementById('bloodGroup').value;
-            if (!bloodGroup) {
-                document.getElementById('bloodError').textContent = 'Please select blood group';
-                isValid = false;
-            }
-            
+            if (!bloodGroup) { document.getElementById('bloodError').textContent = 'Please select blood group'; isValid = false; }
             const photoFile = document.getElementById('studentPhoto').files[0];
             const photoError = validateFile(photoFile, 'Student photo');
-            if (photoError) {
-                document.getElementById('photoError').textContent = photoError;
-                isValid = false;
-            }
-            
+            if (photoError) { document.getElementById('photoError').textContent = photoError; isValid = false; }
             const signFile = document.getElementById('signature').files[0];
             const signError = validateFile(signFile, 'Signature');
-            if (signError) {
-                document.getElementById('signError').textContent = signError;
-                isValid = false;
-            }
-            
+            if (signError) { document.getElementById('signError').textContent = signError; isValid = false; }
             return isValid;
         }
         
@@ -469,31 +250,24 @@ const HTML_CONTENT = `<!DOCTYPE html>
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.readAsDataURL(file);
-                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onload = () => resolve(reader.result);
                 reader.onerror = error => reject(error);
             });
         }
         
-        async function downloadExcel() {
-            window.open('/api/download-excel', '_blank');
-        }
+        async function downloadExcel() { window.open('/api/download-excel', '_blank'); }
         
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            
             if (!validateForm()) return;
-            
             statusDiv.className = 'status loading';
             statusDiv.innerHTML = '<i class="fas fa-spinner fa-pulse"></i> Processing registration...';
             submitBtn.disabled = true;
-            
             try {
                 const photoFile = document.getElementById('studentPhoto').files[0];
                 const signatureFile = document.getElementById('signature').files[0];
-                
                 const photoBase64 = await fileToBase64(photoFile);
                 const signatureBase64 = await fileToBase64(signatureFile);
-                
                 const formData = {
                     studentName: document.getElementById('studentName').value.trim(),
                     fatherName: document.getElementById('fatherName').value.trim(),
@@ -505,99 +279,43 @@ const HTML_CONTENT = `<!DOCTYPE html>
                     photoBase64: photoBase64,
                     signatureBase64: signatureBase64
                 };
-                
-                const response = await fetch('/api/submit', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData)
-                });
-                
+                const response = await fetch('/api/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) });
                 const result = await response.json();
-                
                 if (result.success) {
                     statusDiv.className = 'status success';
-                    statusDiv.innerHTML = \`✅ \${result.message}\`;
+                    statusDiv.innerHTML = '✅ ' + result.message;
                     form.reset();
                     loadTotalStudents();
-                } else {
-                    throw new Error(result.message);
-                }
+                } else { throw new Error(result.message); }
             } catch (error) {
                 statusDiv.className = 'status error';
-                statusDiv.innerHTML = \`❌ Error: \${error.message}\`;
-            } finally {
-                submitBtn.disabled = false;
-            }
+                statusDiv.innerHTML = '❌ Error: ' + error.message;
+            } finally { submitBtn.disabled = false; }
         });
     </script>
 </body>
 </html>`;
 
-// ============ API ENDPOINTS ============
-
-// Serve the main HTML page
+// Serve HTML
 app.get('/', (req, res) => {
-    // Try to serve from public folder first
-    const publicPath = path.join(__dirname, 'public', 'index.html');
-    if (fs.existsSync(publicPath)) {
-        res.sendFile(publicPath);
-    } else {
-        // Fallback to embedded HTML
-        res.send(HTML_CONTENT);
-    }
+    res.send(HTML_CONTENT);
 });
 
 // Submit registration
 app.post('/api/submit', async (req, res) => {
     console.log('\n📥 New registration received');
-    
     try {
         const { studentName, fatherName, address, pincode, contactNo,
                 emergencyContact, bloodGroup, photoBase64, signatureBase64 } = req.body;
         
-        // Validation
         if (!studentName || !fatherName || !address || !pincode || 
             !contactNo || !emergencyContact || !bloodGroup) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Missing required fields' 
-            });
+            return res.status(400).json({ success: false, message: 'Missing required fields' });
         }
         
         console.log(`👤 Student: ${studentName}`);
         
-        // Save photos to disk (optional)
-        let savedFiles = { folderName: 'N/A', photoFileName: 'N/A', signatureFileName: 'N/A' };
-        try {
-            const safeName = studentName.replace(/[^a-zA-Z0-9]/g, '_');
-            const timestamp = Date.now();
-            const folderName = `${safeName}_${timestamp}`;
-            const studentFolder = path.join(DATA_DIR, folderName);
-            
-            if (!fs.existsSync(studentFolder)) {
-                fs.mkdirSync(studentFolder, { recursive: true });
-            }
-            
-            const photoFileName = `${safeName}_photo.jpg`;
-            const signatureFileName = `${safeName}_sign.jpg`;
-            
-            if (photoBase64) {
-                const photoBuffer = Buffer.from(photoBase64, 'base64');
-                fs.writeFileSync(path.join(studentFolder, photoFileName), photoBuffer);
-            }
-            
-            if (signatureBase64) {
-                const signatureBuffer = Buffer.from(signatureBase64, 'base64');
-                fs.writeFileSync(path.join(studentFolder, signatureFileName), signatureBuffer);
-            }
-            
-            savedFiles = { folderName, photoFileName, signatureFileName };
-            console.log(`📁 Created folder: ${folderName}`);
-        } catch (fileError) {
-            console.log('File save note:', fileError.message);
-        }
-        
-        // Create new student entry
+        // Create new entry with images as base64
         const newEntry = {
             "S.No": inMemoryStudents.length + 1,
             "Student Name": studentName,
@@ -607,46 +325,47 @@ app.post('/api/submit', async (req, res) => {
             "Contact No": contactNo,
             "Emergency Contact No": emergencyContact,
             "Blood Group": bloodGroup,
-            "Photo File": savedFiles.photoFileName,
-            "Signature File": savedFiles.signatureFileName,
-            "Student Folder": savedFiles.folderName,
+            "Photo (Base64)": photoBase64 || '',
+            "Signature (Base64)": signatureBase64 || '',
             "Registration Date": new Date().toLocaleString(),
             "Registration ID": `REG${Date.now()}${Math.floor(Math.random() * 1000)}`
         };
         
-        // Add to storage
         inMemoryStudents.push(newEntry);
-        
-        // Save to file immediately
         saveToFile();
         
         console.log(`✅ Registered! Total students: ${inMemoryStudents.length}`);
         
         res.json({ 
             success: true, 
-            message: `✅ Registration successful! Total students: ${inMemoryStudents.length}`,
+            message: `Registration successful! Total students: ${inMemoryStudents.length}`,
             totalStudents: inMemoryStudents.length
         });
         
     } catch (error) {
         console.error('Error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: error.message 
-        });
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 
 // Get all students
 app.get('/api/students', (req, res) => {
-    res.json({ 
-        success: true, 
-        students: inMemoryStudents, 
-        total: inMemoryStudents.length 
-    });
+    const studentsWithoutImages = inMemoryStudents.map(s => ({
+        "S.No": s["S.No"],
+        "Student Name": s["Student Name"],
+        "Father's Name": s["Father's Name"],
+        "Address": s["Address"],
+        "Pin Code": s["Pin Code"],
+        "Contact No": s["Contact No"],
+        "Emergency Contact No": s["Emergency Contact No"],
+        "Blood Group": s["Blood Group"],
+        "Registration Date": s["Registration Date"],
+        "Registration ID": s["Registration ID"]
+    }));
+    res.json({ success: true, students: studentsWithoutImages, total: inMemoryStudents.length });
 });
 
-// Download Excel file
+// Download Excel file (with images embedded)
 app.get('/api/download-excel', (req, res) => {
     try {
         if (inMemoryStudents.length === 0) {
@@ -674,21 +393,8 @@ app.get('/health', (req, res) => {
     res.json({ 
         status: 'OK', 
         timestamp: new Date().toISOString(),
-        totalStudents: inMemoryStudents.length,
-        server: 'Render.com Ready',
-        publicFolderExists: fs.existsSync(path.join(__dirname, 'public')),
-        indexHtmlExists: fs.existsSync(path.join(__dirname, 'public', 'index.html'))
+        totalStudents: inMemoryStudents.length
     });
-});
-
-// Catch-all route to handle client-side routing
-app.get('*', (req, res) => {
-    const publicPath = path.join(__dirname, 'public', 'index.html');
-    if (fs.existsSync(publicPath)) {
-        res.sendFile(publicPath);
-    } else {
-        res.send(HTML_CONTENT);
-    }
 });
 
 const PORT = process.env.PORT || 3000;
@@ -699,11 +405,10 @@ app.listen(PORT, '0.0.0.0', () => {
     ║                                                            ║
     ║   📡 Server: http://localhost:${PORT}                       ║
     ║   👥 Students Registered: ${inMemoryStudents.length}         ║
-    ║   📁 Public folder exists: ${fs.existsSync(path.join(__dirname, 'public'))}
-    ║   📄 Index.html exists: ${fs.existsSync(path.join(__dirname, 'public', 'index.html'))}
+    ║   📸 Images stored as Base64 INSIDE Excel                  ║
     ║                                                            ║
-    ║   ✅ Ready for deployment on Render.com                    ║
-    ║   📋 Visit: https://your-app.onrender.com                  ║
+    ║   ✅ Photos and signatures are saved in the Excel file!    ║
+    ║   📋 Download Excel to see all data with images            ║
     ╚════════════════════════════════════════════════════════════╝
     `);
 });
