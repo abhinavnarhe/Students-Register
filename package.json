@@ -1,13 +1,8 @@
 {
-  "name": "student-registration-system",
+  "name": "student-registration",
   "version": "1.0.0",
-  "description": "Student Registration with Excel Export",
-  "main": "server.js",
   "scripts": {
     "start": "node server.js"
-  },
-  "engines": {
-    "node": "18.x"
   },
   "dependencies": {
     "express": "^4.18.2",
